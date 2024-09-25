@@ -1,7 +1,29 @@
+variable "worker_nodes" {
+  type    = list(string)
+  default = ["proxmox-1", "proxmox-2", "proxmox-4"]
+}
+
+variable "worker_count_per_node" {
+  default = 3
+}
+
+# Create a local map to represent all workers with their node and index
+locals {
+  worker_instances = flatten([
+    for node in var.worker_nodes : [
+      for index in range(var.worker_count_per_node) : {
+        node  = node
+        index = index
+      }
+    ]
+  ])
+}
+
 resource "proxmox_virtual_environment_file" "k8s_worker" {
+  for_each     = toset(var.worker_nodes)
   content_type = "snippets"
-  datastore_id = "local"
-  node_name    = "proxmox-1"
+  datastore_id = "local-lvm"
+  node_name    = each.key
 
   source_raw {
     data = <<EOF
@@ -32,7 +54,7 @@ runcmd:
     - echo "done" > /tmp/cloud-config.done
 EOF
 
-    file_name = "cloud-config.yaml"
+    file_name = "cloud-config-worker-${each.key}.yaml"
   }
 }
 
@@ -46,20 +68,20 @@ variable "ssh_private_key_path" {
 }
 
 resource "proxmox_virtual_environment_vm" "k8s_worker" {
-  count     = 3 # Number of worker nodes
-  name      = "k8s-worker-${count.index}"
-  node_name = "proxmox-1"
+  for_each  = { for i, worker in local.worker_instances : "${worker.node}-${worker.index}" => worker }
+  name      = "k8s-worker-${each.value.node}-${each.value.index + 1}"
+  node_name = each.value.node
 
   agent {
     enabled = true
   }
 
   cpu {
-    cores = 2
+    cores = 4
   }
 
   memory {
-    dedicated = 4096
+    dedicated = 8192
   }
 
   disk {
@@ -68,7 +90,7 @@ resource "proxmox_virtual_environment_vm" "k8s_worker" {
     interface    = "virtio0"
     iothread     = true
     discard      = "on"
-    size         = 30
+    size         = 75
   }
 
   initialization {
@@ -78,7 +100,7 @@ resource "proxmox_virtual_environment_vm" "k8s_worker" {
       }
     }
 
-    user_data_file_id = proxmox_virtual_environment_file.k8s_worker.id
+    user_data_file_id = proxmox_virtual_environment_file.k8s_worker[each.value.node].id
   }
 
   network_device {
@@ -87,7 +109,7 @@ resource "proxmox_virtual_environment_vm" "k8s_worker" {
 }
 
 output "worker_ipv4_address" {
-  value = proxmox_virtual_environment_vm.k8s_worker[*].ipv4_addresses[1][0]
+  value = { for k, v in proxmox_virtual_environment_vm.k8s_worker : k => v.ipv4_addresses[1][0] }
 }
 
 #resource "null_resource" "afterparty" {

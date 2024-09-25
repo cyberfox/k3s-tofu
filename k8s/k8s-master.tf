@@ -22,13 +22,19 @@ provider "proxmox" {
 }
 
 data "local_file" "ssh_public_key" {
-  filename = "/Users/mrs/.ssh/id_rsa.pub"
+  filename = pathexpand("~/.ssh/id_rsa.pub")
+}
+
+variable "nodes" {
+  type    = list(string)
+  default = ["proxmox-1", "proxmox-2"]
 }
 
 resource "proxmox_virtual_environment_file" "k8s_master" {
+  for_each     = toset(var.nodes)
   content_type = "snippets"
   datastore_id = "local"
-  node_name    = "proxmox-1"
+  node_name    = each.key
 
   source_raw {
     data = <<EOF
@@ -58,8 +64,8 @@ runcmd:
     - apt update
     - sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
     - apt install -y kubeadm kubelet kubectl kubernetes-cni
-    - kubeadm init
-    - kubectl apply -f "https://docs/projectcalico.org/manifests/calico.yaml"
+    - /usr/bin/kubeadm init
+    - /usr/bin/kubectl apply -f "https://docs/projectcalico.org/manifests/calico.yaml"
     - mkdir -p ~k8smain/.kube
     - cp -i /etc/kubernetes/admin.conf ~k8smain/.kube/config
     - chown $(id k8smain -u)\:$(id k8smain -g) ~k8smain/.kube ~k8smain/.kube/config
@@ -71,8 +77,9 @@ EOF
 }
 
 resource "proxmox_virtual_environment_vm" "k8s_master" {
+  for_each  = toset(var.nodes)
   name      = "k8s-master"
-  node_name = "proxmox-1"
+  node_name = each.key
 
   agent {
     enabled = true
@@ -87,12 +94,12 @@ resource "proxmox_virtual_environment_vm" "k8s_master" {
   }
 
   disk {
-    datastore_id = "local-lvm"
+    datastore_id = "local"
     file_id      = proxmox_virtual_environment_download_file.ubuntu_cloud_image.id
     interface    = "virtio0"
     iothread     = true
     discard      = "on"
-    size         = 20
+    size         = 10
   }
 
   initialization {
@@ -102,7 +109,7 @@ resource "proxmox_virtual_environment_vm" "k8s_master" {
       }
     }
 
-    user_data_file_id = proxmox_virtual_environment_file.k8s_master.id
+    user_data_file_id = proxmox_virtual_environment_file.k8s_master[each.key].id
   }
 
   network_device {
@@ -116,13 +123,16 @@ resource "proxmox_virtual_environment_download_file" "ubuntu_cloud_image" {
   node_name    = "proxmox-1"
 
   url = "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
+  overwrite = true
+  overwrite_unmanaged = true
 }
 
 output "master_ipv4_address" {
-  value = proxmox_virtual_environment_vm.k8s_master.ipv4_addresses[1][0]
+  value = { for k, v in proxmox_virtual_environment_vm.k8s_master : k => v.ipv4_addresses[1][0] }
 }
 
 resource "null_resource" "get_join_command" {
+  for_each = proxmox_virtual_environment_vm.k8s_master
   depends_on = [proxmox_virtual_environment_vm.k8s_master]
 
   triggers = {
@@ -131,17 +141,31 @@ resource "null_resource" "get_join_command" {
 
   provisioner "remote-exec" {
     connection {
-      host = "${proxmox_virtual_environment_vm.k8s_master.ipv4_addresses[1][0]}"
+      host = each.value.ipv4_addresses[1][0]
+      user = "k8smain"
+      type = "ssh"
+      private_key = file("~/.ssh/id_rsa")
+    }
+
+    # Wait for the cloud-init to finish by checking for the existence of the marker file
+    inline = [
+      "while [ ! -f /tmp/cloud-config.done ]; do sleep 10; done"
+    ]
+  }
+
+  provisioner "remote-exec" {
+    connection {
+      host = each.value.ipv4_addresses[1][0]
       user = "k8smain"
       type = "ssh"
       private_key = file("~/.ssh/id_rsa")
     }
     inline = [
-      "kubeadm token create --print-join-command > /tmp/join_command.sh"
+      "/usr/bin/kubeadm token create --print-join-command > /tmp/join_command.sh"
     ]
   }
 
   provisioner "local-exec" {
-    command = "scp k8smain@${proxmox_virtual_environment_vm.k8s_master.ipv4_addresses[1][0]}:/tmp/join_command.sh ${path.module}/join_command.sh"
+    command = "scp k8smain@${each.value.ipv4_addresses[1][0]}:/tmp/join_command.sh ${path.module}/join_command_${each.key}.sh"
   }
 }
