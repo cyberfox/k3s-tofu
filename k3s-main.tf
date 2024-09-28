@@ -39,6 +39,12 @@ resource "proxmox_virtual_environment_vm" "k3s_master_init" {
   name      = "k3s-master-${var.master_nodes[0]}"
   node_name = var.master_nodes[0]
 
+  lifecycle {
+    ignore_changes = [
+      initialization[0].user_data_file_id
+    ]
+  }
+
   agent {
     enabled = true
   }

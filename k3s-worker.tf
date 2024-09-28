@@ -1,11 +1,30 @@
 # k3s-workers.tf
+#k3s-worker-proxmox-4
+locals {
+  existing_worker_vms = {
+    for node in var.worker_nodes :
+        node => node
+#    "k3s-worker-${node}" => node
+  }
+}
+
+locals {
+  new_worker_vms = {
+    for node in var.worker_nodes :
+    "k3s-worker-new-${index(var.worker_nodes, node) + 1}" => node
+  }
+}
+
+locals {
+  all_worker_vms = merge(local.existing_worker_vms, local.new_worker_vms)
+}
 
 # Cloud-init for worker nodes
 resource "proxmox_virtual_environment_file" "k3s_worker" {
-  for_each     = toset(var.worker_nodes)
+  for_each     = local.all_worker_vms
   content_type = "snippets"
   datastore_id = "local"
-  node_name    = each.key
+  node_name    = each.value
 
   source_raw {
     data = <<EOF
@@ -26,7 +45,7 @@ runcmd:
   - systemctl enable qemu-guest-agent
   - systemctl start qemu-guest-agent
   - swapoff -a
-  - hostname k3s-worker-${index(var.worker_nodes, each.key)+1}
+  - hostname ${each.key}
   - echo "done" > /tmp/cloud-config.done
 EOF
 
@@ -36,9 +55,14 @@ EOF
 
 # Worker nodes VMs
 resource "proxmox_virtual_environment_vm" "k3s_worker" {
-  for_each  = toset(var.worker_nodes)
-  name      = "k3s-worker-${each.key}"
-  node_name = each.key
+  for_each  = local.all_worker_vms
+  name      = can(regex("^proxmox-", each.key) == "proxmox-") ? "k3s-worker-${each.key}" : each.key
+  node_name = each.value
+
+  lifecycle {
+     ignore_changes = all
+  }
+#    prevent_destroy = true
 
   agent {
     enabled = true
@@ -54,7 +78,7 @@ resource "proxmox_virtual_environment_vm" "k3s_worker" {
 
   disk {
     datastore_id = "local-lvm"
-    file_id      = proxmox_virtual_environment_download_file.ubuntu_cloud_image[each.key].id
+    file_id      = proxmox_virtual_environment_download_file.ubuntu_cloud_image[each.value].id
     interface    = "virtio0"
     iothread     = true
     discard      = "on"
