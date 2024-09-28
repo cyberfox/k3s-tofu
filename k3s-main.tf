@@ -2,6 +2,7 @@
 
 # Cloud-init for the first master node
 resource "proxmox_virtual_environment_file" "k3s_master_init" {
+  depends_on = [ proxmox_virtual_environment_vm.haproxy ]
   content_type = "snippets"
   datastore_id = "local"
   node_name    = var.master_nodes[0]
@@ -26,10 +27,6 @@ runcmd:
   - systemctl start qemu-guest-agent
   - swapoff -a
   - hostname k3s-main-1
-  - curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server --cluster-init" K3S_TOKEN="${random_password.k3s_token.result}" sh -
-  - mkdir -p ~k8smain/.kube
-  - cp -i /etc/rancher/k3s/k3s.yaml ~k8smain/.kube/config
-  - chown $(id k8smain -u):$(id k8smain -g) ~k8smain/.kube ~k8smain/.kube/config
   - echo "done" > /tmp/cloud-config.done
 EOF
 
@@ -75,6 +72,28 @@ resource "proxmox_virtual_environment_vm" "k3s_master_init" {
 
   network_device {
     bridge = "vmbr0"
+  }
+}
+
+resource "null_resource" "install_k3s_initial_server" {
+  depends_on = [
+    proxmox_virtual_environment_vm.k3s_master_init,
+    proxmox_virtual_environment_vm.haproxy,
+  ]
+
+  provisioner "remote-exec" {
+    connection {
+      host        = local.k3s_master_init_ip
+      user        = "k8smain"
+      private_key = file("~/.ssh/id_rsa")
+    }
+
+    inline = [
+      "curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC=\"server --tls-san ${local.haproxy_ip} --cluster-init\" K3S_TOKEN=\"${random_password.k3s_token.result}\" sh -",
+      "mkdir -p ~k8smain/.kube",
+      "cp -i /etc/rancher/k3s/k3s.yaml ~k8smain/.kube/config",
+      "chown $(id k8smain -u):$(id k8smain -g) ~k8smain/.kube ~k8smain/.kube/config",
+    ]
   }
 }
 
