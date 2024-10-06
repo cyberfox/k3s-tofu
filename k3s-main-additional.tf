@@ -35,6 +35,7 @@ runcmd:
   - systemctl start qemu-guest-agent
   - swapoff -a
   - hostname k3s-main-${index(var.master_nodes, each.key)+1}
+  - echo "k3s-main-${index(var.master_nodes, each.key)+1}" > /etc/hostname
   - echo "done" > /tmp/cloud-config.done
 EOF
 

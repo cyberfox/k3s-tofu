@@ -1,22 +1,20 @@
 # k3s-workers.tf
-#k3s-worker-proxmox-4
-locals {
-  existing_worker_vms = {
-    for node in var.worker_nodes :
-        node => node
-#    "k3s-worker-${node}" => node
-  }
-}
 
 locals {
-  new_worker_vms = {
-    for node in var.worker_nodes :
-    "k3s-worker-new-${index(var.worker_nodes, node) + 1}" => node
+  one_worker_vms = {
+    for node in var.worker_hosts :
+      "k3s-worker-${index(var.worker_hosts, node)*3 + 1}" => node
   }
-}
+  two_worker_vms = {
+    for node in var.worker_hosts :
+      "k3s-worker-${index(var.worker_hosts, node)*3 + 2}" => node
+  }
+  three_worker_vms = {
+    for node in var.worker_hosts :
+      "k3s-worker-${index(var.worker_hosts, node)*3 + 3}" => node
+  }
 
-locals {
-  all_worker_vms = merge(local.existing_worker_vms, local.new_worker_vms)
+  all_worker_vms = merge(local.one_worker_vms, local.two_worker_vms, local.three_worker_vms)
 }
 
 # Cloud-init for worker nodes
@@ -31,7 +29,7 @@ resource "proxmox_virtual_environment_file" "k3s_worker" {
 #cloud-config
 users:
   - default
-  - name: k8sworker
+  - name: worker
     groups:
       - sudo
     shell: /bin/bash
@@ -46,6 +44,7 @@ runcmd:
   - systemctl start qemu-guest-agent
   - swapoff -a
   - hostname ${each.key}
+  - echo "${each.key}" > /etc/hostname
   - echo "done" > /tmp/cloud-config.done
 EOF
 
@@ -69,11 +68,11 @@ resource "proxmox_virtual_environment_vm" "k3s_worker" {
   }
 
   cpu {
-    cores = 2
+    cores = 4
   }
 
   memory {
-    dedicated = 4096
+    dedicated = 16384
   }
 
   disk {
@@ -115,7 +114,7 @@ resource "null_resource" "install_k3s_on_workers" {
         for ip in flatten(each.value.ipv4_addresses) :
         ip if can(regex("^10\\.0\\.1\\.", ip))
       ], 0)
-      user        = "k8sworker"
+      user        = "worker"
       private_key = file("~/.ssh/id_rsa")
     }
 

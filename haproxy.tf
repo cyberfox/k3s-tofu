@@ -27,9 +27,9 @@ runcmd:
   - systemctl enable qemu-guest-agent
   - systemctl start qemu-guest-agent
   - swapoff -a
-  - hostname k3s-proxy
+  - hostname haproxy
+  - echo "haproxy" > /etc/hostname
   - mkdir -p /etc/haproxy
-  - sudo systemctl restart haproxy
   - echo "done" > /tmp/cloud-config.done
 EOF
 
@@ -77,6 +77,7 @@ resource "proxmox_virtual_environment_vm" "haproxy" {
 
   network_device {
     bridge = "vmbr0"
+    mac_address = "bc:24:11:f9:4f:50"
   }
 }
 

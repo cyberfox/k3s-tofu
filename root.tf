@@ -36,13 +36,13 @@ resource "random_password" "k3s_token" {
   special = false
 }
 
-variable "worker_nodes" {
+variable "worker_hosts" {
   default = ["proxmox-1", "proxmox-2", "proxmox-4"]
 }
 
 # Download Ubuntu Cloud Image on all master nodes
 resource "proxmox_virtual_environment_download_file" "ubuntu_cloud_image" {
-  for_each     = toset(concat(var.master_nodes, var.worker_nodes))
+  for_each     = toset(concat(var.master_nodes, var.worker_hosts))
   content_type = "iso"
   datastore_id = "local"
   node_name    = each.key

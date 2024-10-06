@@ -27,6 +27,7 @@ runcmd:
   - systemctl start qemu-guest-agent
   - swapoff -a
   - hostname k3s-main-1
+  - echo "k3s-main-1" > /etc/hostname
   - echo "done" > /tmp/cloud-config.done
 EOF
 
@@ -86,6 +87,10 @@ resource "null_resource" "install_k3s_initial_server" {
     proxmox_virtual_environment_vm.k3s_master_init,
     proxmox_virtual_environment_vm.haproxy,
   ]
+
+  lifecycle {
+    ignore_changes = all
+  }
 
   provisioner "remote-exec" {
     connection {
