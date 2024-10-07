@@ -94,6 +94,10 @@ resource "null_resource" "copy_haproxy_config" {
     destination = "/home/haproxy/haproxy.cfg"  # Adjust the destination path as needed
   }
 
+#  provisioner "local-exec" {
+#    command = "echo '${templatefile("${path.module}/haproxy.cfg.tpl", { master_ips = local.k3s_master_ips })}'"
+#  }
+
   connection {
     type        = "ssh"
     host        = element([
@@ -102,6 +106,10 @@ resource "null_resource" "copy_haproxy_config" {
     ], 0)
     user        = "haproxy"  # Use the appropriate user for your HAProxy server
     private_key = file("~/.ssh/id_rsa")
+  }
+
+  triggers = {
+    always_run = "${timestamp()}"  # Ensures the provisioner always runs
   }
 }
 
@@ -125,6 +133,10 @@ resource "null_resource" "restart_haproxy" {
       "sudo cp /home/haproxy/haproxy.cfg /etc/haproxy/haproxy.cfg",
       "sudo systemctl restart haproxy"
     ]
+  }
+
+  triggers = {
+    always_run = "${timestamp()}"  # Ensures the provisioner always runs
   }
 }
 

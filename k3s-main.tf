@@ -102,9 +102,13 @@ resource "null_resource" "install_k3s_initial_server" {
     inline = [
       "curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC=\"server --tls-san ${local.haproxy_ip} --cluster-init\" K3S_TOKEN=\"${random_password.k3s_token.result}\" sh -",
       "mkdir -p ~k8smain/.kube",
-      "cp -i /etc/rancher/k3s/k3s.yaml ~k8smain/.kube/config",
-      "chown $(id k8smain -u):$(id k8smain -g) ~k8smain/.kube ~k8smain/.kube/config",
+      "sudo cp -i /etc/rancher/k3s/k3s.yaml ~k8smain/.kube/config",
+      "sudo chown $(id k8smain -u):$(id k8smain -g) ~k8smain/.kube ~k8smain/.kube/config",
     ]
+  }
+
+  provisioner "local-exec" {
+    command = "scp -i ~/.ssh/id_rsa k8smain@${local.k3s_master_init_ip}:.kube/config ./kube_config"
   }
 }
 
