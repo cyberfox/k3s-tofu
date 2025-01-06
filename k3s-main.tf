@@ -2,7 +2,6 @@
 
 # Cloud-init for the first master node
 resource "proxmox_virtual_environment_file" "k3s_master_init" {
-  depends_on = [ proxmox_virtual_environment_vm.haproxy ]
   content_type = "snippets"
   datastore_id = "local"
   node_name    = var.master_nodes[0]
@@ -71,6 +70,9 @@ resource "proxmox_virtual_environment_vm" "k3s_master_init" {
   # there, stopping at .109; .110 and up to 199 are
   # workers. 10.0.10.100 is the HAProxy.
   initialization {
+    dns {
+      servers = ["10.0.1.10", "8.8.8.8", "75.75.75.75"]
+    }
     ip_config {
       ipv4 {
         address = "10.0.10.101/24"
@@ -89,7 +91,6 @@ resource "proxmox_virtual_environment_vm" "k3s_master_init" {
 resource "null_resource" "install_k3s_initial_server" {
   depends_on = [
     proxmox_virtual_environment_vm.k3s_master_init,
-    proxmox_virtual_environment_vm.haproxy,
   ]
 
   lifecycle {

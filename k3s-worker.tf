@@ -88,6 +88,9 @@ resource "proxmox_virtual_environment_vm" "k3s_worker" {
   # there, stopping at .109; .110 and up to 199 are
   # workers. 10.0.10.100 is the HAProxy.
   initialization {
+    dns {
+      servers = ["10.0.1.10", "8.8.8.8", "75.75.75.75"]
+    }
     ip_config {
       ipv4 {
         address = "10.0.10.${index(keys(local.all_worker_vms), each.key)+110}/24"
