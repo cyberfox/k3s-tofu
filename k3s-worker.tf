@@ -76,7 +76,7 @@ resource "proxmox_virtual_environment_vm" "k3s_worker" {
   }
 
   disk {
-    datastore_id = each.value != "proxmox-3" ? "local-lvm" : "local"
+    datastore_id = "local-lvm"
     file_id      = proxmox_virtual_environment_download_file.ubuntu_cloud_image[each.value].id
     interface    = "virtio0"
     iothread     = true
@@ -90,7 +90,7 @@ resource "proxmox_virtual_environment_vm" "k3s_worker" {
   initialization {
     ip_config {
       ipv4 {
-        address = "10.0.10.${index(keys(local.all_worker_vms), each.key)+110}"
+        address = "10.0.10.${index(keys(local.all_worker_vms), each.key)+110}/24"
 	gateway = "10.0.10.1"
       }
     }

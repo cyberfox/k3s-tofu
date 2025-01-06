@@ -73,7 +73,7 @@ resource "proxmox_virtual_environment_vm" "k3s_master_init" {
   initialization {
     ip_config {
       ipv4 {
-        address = "10.0.10.101"
+        address = "10.0.10.101/24"
 	gateway = "10.0.10.1"
       }
     }

@@ -71,7 +71,7 @@ resource "proxmox_virtual_environment_vm" "haproxy" {
   initialization {
     ip_config {
       ipv4 {
-        address = "10.0.10.100"
+        address = "10.0.10.100/24"
 	gateway = "10.0.10.1"
       }
     }

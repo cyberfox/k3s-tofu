@@ -59,7 +59,7 @@ resource "proxmox_virtual_environment_vm" "k3s_master_additional" {
   }
 
   disk {
-    datastore_id = each.key != "proxmox-3" ? "local-lvm" : "local"
+    datastore_id = "local-lvm"
     file_id      = proxmox_virtual_environment_download_file.ubuntu_cloud_image[each.key].id
     interface    = "virtio0"
     iothread     = true
@@ -73,7 +73,7 @@ resource "proxmox_virtual_environment_vm" "k3s_master_additional" {
   initialization {
     ip_config {
       ipv4 {
-        address = "10.0.10.${index(local.extra_master_nodes, each.key)+102}"
+        address = "10.0.10.${index(local.extra_master_nodes, each.key)+102}/24"
 	gateway = "10.0.10.1"
       }
     }
@@ -87,6 +87,7 @@ resource "proxmox_virtual_environment_vm" "k3s_master_additional" {
 }
 
 resource "null_resource" "wait_for_master" {
+  depends_on = [ proxmox_virtual_environment_vm.k3s_master_init ]
   provisioner "remote-exec" {
     connection {
       host        = local.k3s_master_init_ip
