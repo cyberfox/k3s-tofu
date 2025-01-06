@@ -1,0 +1,41 @@
+#cloud-config
+autoinstall:
+  version: 1
+  locale: en_US.UTF-8
+  keyboard:
+    layout: us
+  ssh:
+    allow-pw: true
+    install-server: true
+  identity:
+    hostname: packer-k3s-template
+    username: ubuntu
+    password: $y$j9T$JXqsUP8axXJz9s3w8YEdO1$x6Ao6zrtEgPS2KIkN1nRLRNrjsRWYSU5XBGxIOEdQsB
+  packages:
+  - qemu-guest-agent
+  late-commands:
+    - |
+      curtin in-target --target /target apt update
+      curtin in-target --target /target apt install qemu-guest-agent
+      curtin in-target --target /target systemctl enable qemu-guest-agent
+      curtin in-target --target /target systemctl start qemu-guest-agent
+  user-data:
+    users:
+      - name: ubuntu
+        plain_text_passwd: 'masonic'
+        lock_passwd: false
+        ssh_import_id:
+          - gh:cyberfox
+        sudo: "ALL=(ALL) NOPASSWD:ALL"
+        ssh_authorized_keys:
+          - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ2r5oZUOqjLCTv9dsbyNTuRoyafpjxEQtbWtJp5mNcg cyberfox@gmail.com
+          - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDeYBWuTrCZ4E7PjwrZkY5pgwEmZWt/DygganI4bqvnHm8PsAqqtjtn9pRwXMu2DbgBJepEWF6tryKsowvc1PiH76MVc0xa7SsdCUZvArr1IYo2G4J8gqyu/BhfNdJA/xKcCMsy8t+dJVOk9UwBpgk1OUeKnAGVkFNunAueUIgKDL8lj78zVR0jJXdqcgyAlVY9URUVBOlFDPimvS12yCJo9TN13IzPPR18/TQF9fL42Zt9ZGYM0gqYtmfNqN907NuHMXP32ufWf3MaR0nOGqmyQstdyRDboDa/cLk1pyayqYEIIboLG+TMouYSYUcWHGVyKtewAFhthp+F6irO0M0K/lHL8izV2jGUiPdEooSCUc4rO6JLqa81IHeBIyV5EnGdhYcuQC3HhnO+aPID2qsflIG60UxauUwxebAyxCcbR41nbR1AQTyRYVqyqJUXJFzryRuyA0yTVYXBYuECwqgZP5y0zA5RdUze4z+nSOVxbxBzWOpRhtw2aqHJZ7CbVpU= mrs@main
+      - name: k3smain
+        plain_text_passwd: 'masonic'
+        lock_passwd: false
+        ssh_import_id:
+          - gh:cyberfox
+        sudo: "ALL=(ALL) NOPASSWD:ALL"
+        ssh_authorized_keys:
+          - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ2r5oZUOqjLCTv9dsbyNTuRoyafpjxEQtbWtJp5mNcg cyberfox@gmail.com
+          - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDeYBWuTrCZ4E7PjwrZkY5pgwEmZWt/DygganI4bqvnHm8PsAqqtjtn9pRwXMu2DbgBJepEWF6tryKsowvc1PiH76MVc0xa7SsdCUZvArr1IYo2G4J8gqyu/BhfNdJA/xKcCMsy8t+dJVOk9UwBpgk1OUeKnAGVkFNunAueUIgKDL8lj78zVR0jJXdqcgyAlVY9URUVBOlFDPimvS12yCJo9TN13IzPPR18/TQF9fL42Zt9ZGYM0gqYtmfNqN907NuHMXP32ufWf3MaR0nOGqmyQstdyRDboDa/cLk1pyayqYEIIboLG+TMouYSYUcWHGVyKtewAFhthp+F6irO0M0K/lHL8izV2jGUiPdEooSCUc4rO6JLqa81IHeBIyV5EnGdhYcuQC3HhnO+aPID2qsflIG60UxauUwxebAyxCcbR41nbR1AQTyRYVqyqJUXJFzryRuyA0yTVYXBYuECwqgZP5y0zA5RdUze4z+nSOVxbxBzWOpRhtw2aqHJZ7CbVpU= mrs@main
