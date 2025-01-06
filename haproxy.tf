@@ -21,14 +21,14 @@ users:
       - ${trimspace(data.local_file.ssh_public_key.content)}
     sudo: ALL=(ALL) NOPASSWD:ALL
 runcmd:
+  - hostname haproxy
+  - echo "haproxy" > /etc/hostname
   - apt update
   - apt install -y qemu-guest-agent net-tools apt-transport-https curl haproxy
   - timedatectl set-timezone America/Los_Angeles
   - systemctl enable qemu-guest-agent
   - systemctl start qemu-guest-agent
   - swapoff -a
-  - hostname haproxy
-  - echo "haproxy" > /etc/hostname
   - mkdir -p /etc/haproxy
   - echo "done" > /tmp/cloud-config.done
 EOF
@@ -65,10 +65,14 @@ resource "proxmox_virtual_environment_vm" "haproxy" {
     size         = 10
   }
 
+  # Master nodes start with 10.0.10.101 (first master) and go up from
+  # there, stopping at .109; .110 and up to 199 are
+  # workers. 10.0.10.100 is the HAProxy.
   initialization {
     ip_config {
       ipv4 {
-        address = "dhcp"
+        address = "10.0.10.100"
+	gateway = "10.0.10.1"
       }
     }
 
@@ -76,15 +80,13 @@ resource "proxmox_virtual_environment_vm" "haproxy" {
   }
 
   network_device {
-    bridge = "vmbr0"
+    bridge = "vmbr30"
     mac_address = "bc:24:11:f9:4f:50"
   }
 }
 
 resource "null_resource" "copy_haproxy_config" {
   depends_on = [
-    proxmox_virtual_environment_vm.k3s_master_init,
-    proxmox_virtual_environment_vm.k3s_master_additional,
     proxmox_virtual_environment_vm.haproxy
   ]
 
@@ -94,16 +96,13 @@ resource "null_resource" "copy_haproxy_config" {
     destination = "/home/haproxy/haproxy.cfg"  # Adjust the destination path as needed
   }
 
-#  provisioner "local-exec" {
-#    command = "echo '${templatefile("${path.module}/haproxy.cfg.tpl", { master_ips = local.k3s_master_ips })}'"
-#  }
+  provisioner "local-exec" {
+    command = "echo '${templatefile("${path.module}/haproxy.cfg.tpl", { master_ips = local.k3s_master_ips })}'"
+  }
 
   connection {
     type        = "ssh"
-    host        = element([
-        for ip in flatten(proxmox_virtual_environment_vm.haproxy.ipv4_addresses) :
-        ip if can(regex("^10\\.0\\.1\\.", ip))
-    ], 0)
+    host        = "10.0.10.100"
     user        = "haproxy"  # Use the appropriate user for your HAProxy server
     private_key = file("~/.ssh/id_rsa")
   }
@@ -120,10 +119,7 @@ resource "null_resource" "restart_haproxy" {
   provisioner "remote-exec" {
     connection {
       type        = "ssh"
-      host        = element([
-          for ip in flatten(proxmox_virtual_environment_vm.haproxy.ipv4_addresses) :
-          ip if can(regex("^10\\.0\\.1\\.", ip))
-      ], 0)
+      host        = "10.0.10.100"
       user        = "haproxy"  # Use the appropriate user
       private_key = file("~/.ssh/id_rsa")
     }
@@ -131,7 +127,7 @@ resource "null_resource" "restart_haproxy" {
     inline = [
       "sudo mkdir -p /etc/haproxy",
       "sudo cp /home/haproxy/haproxy.cfg /etc/haproxy/haproxy.cfg",
-      "sudo systemctl restart haproxy"
+      "sudo diff /etc/haproxy/haproxy.cfg /home/haproxy/haproxy.cfg || sudo systemctl restart haproxy"
     ]
   }
 
@@ -144,11 +140,10 @@ resource "null_resource" "restart_haproxy" {
 # Output HAProxy IP
 
 locals {
-  haproxy_ip = element([
-    for ip in flatten(proxmox_virtual_environment_vm.haproxy.ipv4_addresses) : ip if can(regex("^10\\.0\\.1\\.", ip))
-  ], 0)
+  haproxy_ip = "10.0.10.100"
 }
 
 output "haproxy_ip" {
   value = local.haproxy_ip
 }
+

@@ -63,3 +63,7 @@ locals {
     local.k3s_master_additional_ips
   )
 }
+
+locals {
+  extra_master_nodes = slice(var.master_nodes, 1, length(var.master_nodes))
+}

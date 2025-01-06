@@ -1,4 +1,4 @@
-# k3s-workers.tf
+# k3s-worker.tf
 
 locals {
   one_worker_vms = {
@@ -37,14 +37,14 @@ users:
       - ${trimspace(data.local_file.ssh_public_key.content)}
     sudo: ALL=(ALL) NOPASSWD:ALL
 runcmd:
+  - hostname ${each.key}
+  - echo "${each.key}" > /etc/hostname
   - apt update
   - apt install -y qemu-guest-agent net-tools apt-transport-https curl
   - timedatectl set-timezone America/Los_Angeles
   - systemctl enable qemu-guest-agent
   - systemctl start qemu-guest-agent
   - swapoff -a
-  - hostname ${each.key}
-  - echo "${each.key}" > /etc/hostname
   - echo "done" > /tmp/cloud-config.done
 EOF
 
@@ -76,7 +76,7 @@ resource "proxmox_virtual_environment_vm" "k3s_worker" {
   }
 
   disk {
-    datastore_id = "local-lvm"
+    datastore_id = each.value != "proxmox-3" ? "local-lvm" : "local"
     file_id      = proxmox_virtual_environment_download_file.ubuntu_cloud_image[each.value].id
     interface    = "virtio0"
     iothread     = true
@@ -84,10 +84,14 @@ resource "proxmox_virtual_environment_vm" "k3s_worker" {
     size         = 30
   }
 
+  # Master nodes start with 10.0.10.101 (first master) and go up from
+  # there, stopping at .109; .110 and up to 199 are
+  # workers. 10.0.10.100 is the HAProxy.
   initialization {
     ip_config {
       ipv4 {
-        address = "dhcp"
+        address = "10.0.10.${index(keys(local.all_worker_vms), each.key)+110}"
+	gateway = "10.0.10.1"
       }
     }
 
@@ -95,7 +99,7 @@ resource "proxmox_virtual_environment_vm" "k3s_worker" {
   }
 
   network_device {
-    bridge = "vmbr0"
+    bridge = "vmbr30"
   }
 }
 
@@ -110,10 +114,7 @@ resource "null_resource" "install_k3s_on_workers" {
 
   provisioner "remote-exec" {
     connection {
-      host        = element([
-        for ip in flatten(each.value.ipv4_addresses) :
-        ip if can(regex("^10\\.0\\.1\\.", ip))
-      ], 0)
+      host = "10.0.10.${110+index(keys(proxmox_virtual_environment_vm.k3s_worker), each.key)}"
       user        = "worker"
       private_key = file("~/.ssh/id_rsa")
     }
@@ -131,11 +132,7 @@ resource "null_resource" "install_k3s_on_workers" {
 
 locals {
   k3s_worker_ips = {
-    for k, v in proxmox_virtual_environment_vm.k3s_worker :
-    k => element([
-      for ip in flatten(v.ipv4_addresses) :
-      ip if can(regex("^10\\.0\\.1\\.", ip))
-    ], 0)
+    for k, v in proxmox_virtual_environment_vm.k3s_worker : k => "10.0.10.${110+index(keys(proxmox_virtual_environment_vm.k3s_worker), k)}"
   }
 }
 

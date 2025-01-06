@@ -12,7 +12,7 @@ resource "proxmox_virtual_environment_file" "k3s_master_init" {
 #cloud-config
 users:
   - default
-  - name: k8smain
+  - name: k3smain
     groups:
       - sudo
     shell: /bin/bash
@@ -20,14 +20,14 @@ users:
       - ${trimspace(data.local_file.ssh_public_key.content)}
     sudo: ALL=(ALL) NOPASSWD:ALL
 runcmd:
+  - hostname k3s-main-1
+  - echo "k3s-main-1" > /etc/hostname
   - apt update
   - apt install -y qemu-guest-agent net-tools apt-transport-https curl
   - timedatectl set-timezone America/Los_Angeles
   - systemctl enable qemu-guest-agent
   - systemctl start qemu-guest-agent
   - swapoff -a
-  - hostname k3s-main-1
-  - echo "k3s-main-1" > /etc/hostname
   - echo "done" > /tmp/cloud-config.done
 EOF
 
@@ -67,10 +67,14 @@ resource "proxmox_virtual_environment_vm" "k3s_master_init" {
     size         = 30
   }
 
+  # Master nodes start with 10.0.10.101 (first master) and go up from
+  # there, stopping at .109; .110 and up to 199 are
+  # workers. 10.0.10.100 is the HAProxy.
   initialization {
     ip_config {
       ipv4 {
-        address = "dhcp"
+        address = "10.0.10.101"
+	gateway = "10.0.10.1"
       }
     }
 
@@ -78,7 +82,7 @@ resource "proxmox_virtual_environment_vm" "k3s_master_init" {
   }
 
   network_device {
-    bridge = "vmbr0"
+    bridge = "vmbr30"
   }
 }
 
@@ -95,26 +99,27 @@ resource "null_resource" "install_k3s_initial_server" {
   provisioner "remote-exec" {
     connection {
       host        = local.k3s_master_init_ip
-      user        = "k8smain"
+      user        = "k3smain"
       private_key = file("~/.ssh/id_rsa")
     }
 
     inline = [
       "curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC=\"server --tls-san ${local.haproxy_ip} --cluster-init\" K3S_TOKEN=\"${random_password.k3s_token.result}\" sh -",
-      "mkdir -p ~k8smain/.kube",
-      "sudo cp -i /etc/rancher/k3s/k3s.yaml ~k8smain/.kube/config",
-      "sudo chown $(id k8smain -u):$(id k8smain -g) ~k8smain/.kube ~k8smain/.kube/config",
+      "mkdir -p ~k3smain/.kube",
+      "sudo cp -i /etc/rancher/k3s/k3s.yaml ~k3smain/.kube/config",
+      "sudo chown $(id k3smain -u):$(id k3smain -g) ~k3smain/.kube ~k3smain/.kube/config",
     ]
   }
 
   provisioner "local-exec" {
-    command = "scp -i ~/.ssh/id_rsa k8smain@${local.k3s_master_init_ip}:.kube/config ./kube_config"
+    command = "scp -i ~/.ssh/id_rsa k3smain@${local.k3s_master_init_ip}:.kube/config ./kube_config"
   }
 }
 
 locals {
-  k3s_master_init_ip = element([
-    for ip in flatten(proxmox_virtual_environment_vm.k3s_master_init.ipv4_addresses) :
-    ip if can(regex("^10\\.0\\.1\\.", ip))
-  ], 0)
+  k3s_master_init_ip = "10.0.10.101"
+}
+
+output "k3s_master_init_ip" {
+  value = local.k3s_master_init_ip
 }

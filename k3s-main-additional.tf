@@ -1,10 +1,7 @@
 locals {
   k3s_master_additional_ips = [
     for k, v in proxmox_virtual_environment_vm.k3s_master_additional :
-    element([
-      for ip in flatten(v.ipv4_addresses) :
-      ip if can(regex("^10\\.0\\.1\\.", ip))
-    ], 0)
+      "10.0.10.${102+index(keys(proxmox_virtual_environment_vm.k3s_master_additional), k)}"
   ]
 }
 
@@ -20,7 +17,7 @@ resource "proxmox_virtual_environment_file" "k3s_master_additional" {
 #cloud-config
 users:
   - default
-  - name: k8smain
+  - name: k3smain
     groups:
       - sudo
     shell: /bin/bash
@@ -28,14 +25,14 @@ users:
       - ${trimspace(data.local_file.ssh_public_key.content)}
     sudo: ALL=(ALL) NOPASSWD:ALL
 runcmd:
+  - hostname k3s-main-${index(var.master_nodes, each.key)+1}
+  - echo "k3s-main-${index(var.master_nodes, each.key)+1}" > /etc/hostname
   - apt update
   - apt install -y qemu-guest-agent net-tools apt-transport-https curl
   - timedatectl set-timezone America/Los_Angeles
   - systemctl enable qemu-guest-agent
   - systemctl start qemu-guest-agent
   - swapoff -a
-  - hostname k3s-main-${index(var.master_nodes, each.key)+1}
-  - echo "k3s-main-${index(var.master_nodes, each.key)+1}" > /etc/hostname
   - echo "done" > /tmp/cloud-config.done
 EOF
 
@@ -45,7 +42,7 @@ EOF
 
 # Additional master nodes VMs
 resource "proxmox_virtual_environment_vm" "k3s_master_additional" {
-  for_each  = toset(slice(var.master_nodes, 1, length(var.master_nodes)))
+  for_each  = toset(local.extra_master_nodes)
   name      = "k3s-master-${each.key}"
   node_name = each.key
 
@@ -62,7 +59,7 @@ resource "proxmox_virtual_environment_vm" "k3s_master_additional" {
   }
 
   disk {
-    datastore_id = "local-lvm"
+    datastore_id = each.key != "proxmox-3" ? "local-lvm" : "local"
     file_id      = proxmox_virtual_environment_download_file.ubuntu_cloud_image[each.key].id
     interface    = "virtio0"
     iothread     = true
@@ -70,10 +67,14 @@ resource "proxmox_virtual_environment_vm" "k3s_master_additional" {
     size         = 30
   }
 
+  # Master nodes start with 10.0.10.101 (first master) and go up from
+  # there, stopping at .109; .110 and up to 199 are
+  # workers. 10.0.10.100 is the HAProxy.
   initialization {
     ip_config {
       ipv4 {
-        address = "dhcp"
+        address = "10.0.10.${index(local.extra_master_nodes, each.key)+102}"
+	gateway = "10.0.10.1"
       }
     }
 
@@ -81,7 +82,21 @@ resource "proxmox_virtual_environment_vm" "k3s_master_additional" {
   }
 
   network_device {
-    bridge = "vmbr0"
+    bridge = "vmbr30"
+  }
+}
+
+resource "null_resource" "wait_for_master" {
+  provisioner "remote-exec" {
+    connection {
+      host        = local.k3s_master_init_ip
+      user        = "k3smain"
+      private_key = file("~/.ssh/id_rsa")
+    }
+
+    inline = [
+      "timeout 300 sh -c 'while [ ! -f /tmp/cloud-config.done ]; do sleep 5; done'"
+    ]
   }
 }
 
@@ -90,17 +105,15 @@ resource "null_resource" "install_k3s_on_additional_masters" {
   for_each = proxmox_virtual_environment_vm.k3s_master_additional
 
   depends_on = [
+    null_resource.wait_for_master,
     proxmox_virtual_environment_vm.k3s_master_init,
     proxmox_virtual_environment_vm.k3s_master_additional,
   ]
 
   provisioner "remote-exec" {
     connection {
-      host        = element([
-        for ip in flatten(each.value.ipv4_addresses) :
-        ip if can(regex("^10\\.0\\.1\\.", ip))
-      ], 0)
-      user        = "k8smain"
+      host        = "10.0.10.${102+index(proxmox_virtual_environment_vm.k3s_master_additional, each.key)}"
+      user        = "k3smain"
       private_key = file("~/.ssh/id_rsa")
     }
 
